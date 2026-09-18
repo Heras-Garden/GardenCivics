@@ -1,0 +1,37 @@
+name: GardenCivics
+version: '${project.version}'
+main: com.herasgarden.gardencivics.GardenCivics
+api-version: '26.2'
+author: Hera's Garden
+website: https://herasgarden.net
+description: Territory governments, civic treasury, officials, and citizenship applications.
+depend: [GardenCore, GardenLands]
+
+commands:
+  government:
+    aliases: [gov]
+    description: Manage your Garden territory government.
+    usage: /government <create|info|roles|role|appoint|remove|treasury|deposit|withdraw|payroll>
+  civics:
+    description: Apply for citizenship and review civic applications.
+    usage: /civics <apply|applications|approve|reject>
+
+permissions:
+  gardencivics.admin:
+    description: Bypass GardenCivics government permission checks.
+    default: op
+  gardencivics.government:
+    default: true
+  gardencivics.government.create:
+    default: true
+  gardencivics.government.manage:
+    default: true
+  gardencivics.treasury:
+    default: true
+  gardencivics.payroll:
+    description: Access government payroll commands; organization PAYROLL_RUN capability is still required.
+    default: true
+  gardencivics.apply:
+    default: true
+  gardencivics.review:
+    default: true
