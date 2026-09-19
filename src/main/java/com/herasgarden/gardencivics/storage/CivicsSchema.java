@@ -3,6 +3,7 @@ package com.herasgarden.gardencivics.storage;
 import com.herasgarden.gardencore.api.storage.GardenStorage;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -15,8 +16,11 @@ public final class CivicsSchema {
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS gcv_governments ("
                     + "territory_claim_uuid VARCHAR(36) PRIMARY KEY,"
                     + "organization_uuid VARCHAR(36) NOT NULL UNIQUE,"
+                    + "government_type VARCHAR(32) NOT NULL DEFAULT 'COUNCIL',"
                     + "created_by VARCHAR(36) NOT NULL,"
                     + "created_at BIGINT NOT NULL)");
+            ensureColumn(connection, "gcv_governments", "government_type",
+                    "ALTER TABLE gcv_governments ADD COLUMN government_type VARCHAR(32) NOT NULL DEFAULT 'COUNCIL'");
 
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS gcv_citizenship_applications ("
                     + "application_uuid VARCHAR(36) PRIMARY KEY,"
@@ -63,6 +67,15 @@ public final class CivicsSchema {
                     + "status VARCHAR(24) NOT NULL,"
                     + "updated_at BIGINT NOT NULL,"
                     + "PRIMARY KEY (run_uuid, player_uuid))");
+        }
+    }
+
+    private static void ensureColumn(Connection connection, String table, String column, String ddl) throws SQLException {
+        try (ResultSet result = connection.getMetaData().getColumns(null, null, table, column)) {
+            if (result.next()) return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(ddl);
         }
     }
 }

@@ -5,11 +5,13 @@ import com.herasgarden.gardencivics.command.GovernmentCommand;
 import com.herasgarden.gardencivics.payroll.PayrollService;
 import com.herasgarden.gardencivics.storage.CivicsSchema;
 import com.herasgarden.gardencore.api.GardenPlatform;
+import com.herasgarden.gardencore.api.civics.TerritoryGovernmentRegistrar;
 import com.herasgarden.gardencore.api.land.GardenCitizenshipDirectory;
 import com.herasgarden.gardencore.api.land.GardenTerritoryDirectory;
 import com.herasgarden.gardencore.api.organization.OrganizationDirectory;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.RegisteredServiceProvider;
+import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.sql.SQLException;
@@ -48,6 +50,8 @@ public final class GardenCivics extends JavaPlugin {
                 citizenship,
                 getConfig().getInt("citizenship.application-message-max", 280)
         );
+        getServer().getServicesManager().register(
+                TerritoryGovernmentRegistrar.class, civics, this, ServicePriority.Normal);
 
         PayrollService payroll = new PayrollService(this, platform, organizations, civics);
         GovernmentCommand governmentCommand = new GovernmentCommand(civics, payroll);
