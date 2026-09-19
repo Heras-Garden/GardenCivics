@@ -10,6 +10,7 @@ import com.herasgarden.gardencore.api.organization.OrganizationCapability;
 import com.herasgarden.gardencore.api.organization.OrganizationRoleView;
 import com.herasgarden.gardencore.api.organization.OrganizationView;
 import com.herasgarden.gardencore.api.ui.GardenMessages;
+import com.herasgarden.gardencore.claim.GovernmentType;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
@@ -77,14 +78,18 @@ public final class GovernmentCommand implements CommandExecutor, TabCompleter {
             GardenMessages.send(player, "You do not have permission to create a government.");
             return;
         }
-        if (args.length < 2) {
-            GardenMessages.send(player, "Use /government create <territory>.");
+        if (args.length < 3) {
+            GardenMessages.send(player, "Use /government create <council|mayor|monarchy|direct_democracy|custom> <territory>.");
             return;
         }
-        GovernmentContext context = civics.createGovernment(player, join(args, 1));
+        GovernmentType type = GovernmentType.parse(args[1]);
+        if (type == null) {
+            GardenMessages.send(player, "Unknown government type.");
+            return;
+        }
+        GovernmentContext context = civics.createGovernment(player, join(args, 2), type);
         GardenMessages.send(player, "Created " + context.organization().name()
-                + " for " + context.territory().name() + ".");
-        GardenMessages.send(player, "Default positions: Founder, Mayor, Council, Treasurer.");
+                + " for " + context.territory().name() + " as a " + type.displayName() + " government.");
     }
 
     private void showInfo(Player player, String[] args) throws SQLException {
@@ -104,7 +109,8 @@ public final class GovernmentCommand implements CommandExecutor, TabCompleter {
         GovernmentContext government = context.get();
         OrganizationView organization = government.organization();
         String role = organization.memberRoles().get(player.getUniqueId());
-        GardenMessages.send(player, organization.name() + " | Territory: " + government.territory().name() + ".");
+        GardenMessages.send(player, organization.name() + " | Territory: " + government.territory().name()
+                + " | Type: " + government.mapping().governmentType().toLowerCase(Locale.ROOT).replace('_', ' ') + ".");
         GardenMessages.send(player, "Treasury: ⟡ " + organization.treasury()
                 + (role == null ? "" : " | Your role: " + role) + ".");
         GardenMessages.send(player, "Officials: " + organization.memberRoles().size()
@@ -358,7 +364,7 @@ public final class GovernmentCommand implements CommandExecutor, TabCompleter {
 
     private void usage(Player player) {
         GardenMessages.send(player,
-                "/government create <territory>, info [territory], roles, role <...>, "
+                "/government create <type> <territory>, info [territory], roles, role <...>, "
                         + "appoint <player> <role>, remove <player>, treasury, deposit <amount>, "
                         + "withdraw <amount>, payroll <preview|run>");
     }
@@ -405,8 +411,16 @@ public final class GovernmentCommand implements CommandExecutor, TabCompleter {
                 return List.of();
             }
         }
-        if (args.length == 2 && (args[0].equalsIgnoreCase("create") || args[0].equalsIgnoreCase("info"))) {
-            return match(args[1], civics.territories().stream().map(value -> value.name()).toList());
+        if (args.length == 2 && args[0].equalsIgnoreCase("create")) {
+            return match(args[1], List.of("council", "mayor", "monarchy", "direct_democracy", "custom"));
+        }
+        if (args.length >= 3 && args[0].equalsIgnoreCase("create")) {
+            return match(String.join(" ", Arrays.copyOfRange(args, 2, args.length)),
+                    civics.territories().stream().map(value -> value.name()).toList());
+        }
+        if (args.length >= 2 && args[0].equalsIgnoreCase("info")) {
+            return match(String.join(" ", Arrays.copyOfRange(args, 1, args.length)),
+                    civics.territories().stream().map(value -> value.name()).toList());
         }
         return List.of();
     }

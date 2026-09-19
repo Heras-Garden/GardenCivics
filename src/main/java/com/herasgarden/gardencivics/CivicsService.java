@@ -3,6 +3,8 @@ package com.herasgarden.gardencivics;
 import com.herasgarden.gardencivics.model.CitizenshipApplication;
 import com.herasgarden.gardencivics.model.GovernmentRecord;
 import com.herasgarden.gardencore.api.GardenPlatform;
+import com.herasgarden.gardencore.api.civics.TerritoryGovernmentRegistrar;
+import com.herasgarden.gardencore.claim.GovernmentType;
 import com.herasgarden.gardencore.api.integration.IntegrationEventType;
 import com.herasgarden.gardencore.api.land.GardenCitizenshipDirectory;
 import com.herasgarden.gardencore.api.land.GardenTerritoryDirectory;
@@ -25,7 +27,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-public final class CivicsService {
+public final class CivicsService implements TerritoryGovernmentRegistrar {
     private final JavaPlugin plugin;
     private final GardenPlatform platform;
     private final OrganizationDirectory organizations;
@@ -49,18 +51,48 @@ public final class CivicsService {
         this.applicationMessageMax = Math.max(40, applicationMessageMax);
     }
 
-    public GovernmentContext createGovernment(Player founder, String territoryName) throws SQLException {
+    public GovernmentContext createGovernment(Player founder, String territoryName, GovernmentType governmentType)
+            throws SQLException {
         TerritorySummary territory = territories.findByName(territoryName)
                 .orElseThrow(() -> new IllegalArgumentException("That territory does not exist."));
         if (!territories.canManage(founder, territory.claimId())
                 && !founder.hasPermission("gardencivics.admin")) {
             throw new IllegalArgumentException("You must manage that territory to create its government.");
         }
-        if (mappingForTerritory(territory.claimId()).isPresent()) {
+        UUID organizationId = createMapping(
+                founder, territory.claimId(), territory.name(), governmentType == null ? GovernmentType.COUNCIL : governmentType);
+        return governmentForTerritory(territory.claimId())
+                .orElseThrow(() -> new IllegalStateException("Government mapping could not be reloaded."));
+    }
+
+    public GovernmentContext createGovernment(Player founder, String territoryName) throws SQLException {
+        return createGovernment(founder, territoryName, GovernmentType.COUNCIL);
+    }
+
+    @Override
+    public UUID createForTerritory(
+            Player founder,
+            UUID territoryClaimId,
+            String territoryName,
+            GovernmentType governmentType
+    ) throws SQLException {
+        if (governmentType == null) {
+            throw new IllegalArgumentException("A territory must choose a government type.");
+        }
+        return createMapping(founder, territoryClaimId, territoryName, governmentType);
+    }
+
+    private UUID createMapping(
+            Player founder,
+            UUID territoryClaimId,
+            String territoryName,
+            GovernmentType governmentType
+    ) throws SQLException {
+        if (mappingForTerritory(territoryClaimId).isPresent()) {
             throw new IllegalArgumentException("That territory already has a government.");
         }
 
-        String governmentName = territory.name() + " Government";
+        String governmentName = territoryName + " Government";
         OrganizationView organization = organizations.findByName(governmentName).orElse(null);
         if (organization == null) {
             organization = organizations.createGovernment(founder.getUniqueId(), governmentName);
@@ -69,23 +101,25 @@ public final class CivicsService {
             throw new IllegalArgumentException("The government name for this territory is already in use.");
         }
 
-        defineDefaultRoles(organization.id());
+        defineDefaultRoles(organization.id(), governmentType);
 
         long now = System.currentTimeMillis();
         try (Connection connection = platform.storage().connection();
              PreparedStatement statement = connection.prepareStatement(
                      "INSERT INTO gcv_governments "
-                             + "(territory_claim_uuid, organization_uuid, created_by, created_at) VALUES (?, ?, ?, ?)")) {
-            statement.setString(1, territory.claimId().toString());
+                             + "(territory_claim_uuid, organization_uuid, government_type, created_by, created_at) "
+                             + "VALUES (?, ?, ?, ?, ?)")) {
+            statement.setString(1, territoryClaimId.toString());
             statement.setString(2, organization.id().toString());
-            statement.setString(3, founder.getUniqueId().toString());
-            statement.setLong(4, now);
+            statement.setString(3, governmentType.name());
+            statement.setString(4, founder.getUniqueId().toString());
+            statement.setLong(5, now);
             statement.executeUpdate();
         }
 
         if (citizenship.territoryClaimOf(founder.getUniqueId()).isEmpty()) {
             try {
-                citizenship.setCitizenship(founder.getUniqueId(), territory.claimId());
+                citizenship.setCitizenship(founder.getUniqueId(), territoryClaimId);
             } catch (SQLException exception) {
                 plugin.getLogger().warning("Government created, but founder citizenship could not be set: "
                         + exception.getMessage());
@@ -96,13 +130,13 @@ public final class CivicsService {
                 IntegrationEventType.GOVERNMENT_CREATED,
                 "government",
                 organization.id().toString(),
-                "{\"territoryClaimUuid\":\"" + territory.claimId()
-                        + "\",\"territory\":\"" + json(territory.name())
+                "{\"territoryClaimUuid\":\"" + territoryClaimId
+                        + "\",\"territory\":\"" + json(territoryName)
+                        + "\",\"governmentType\":\"" + governmentType.name()
                         + "\",\"organizationUuid\":\"" + organization.id()
                         + "\",\"founderUuid\":\"" + founder.getUniqueId() + "\"}"
         );
-        return governmentForTerritory(territory.claimId())
-                .orElseThrow(() -> new IllegalStateException("Government mapping could not be reloaded."));
+        return organization.id();
     }
 
     public Optional<GovernmentContext> governmentForTerritory(UUID territoryClaimId) throws SQLException {
@@ -501,26 +535,32 @@ public final class CivicsService {
         }
     }
 
-    private void defineDefaultRoles(UUID organizationId) throws SQLException {
-        organizations.defineRole(
-                organizationId,
-                "mayor",
-                "Mayor",
-                0L,
-                EnumSet.allOf(OrganizationCapability.class)
-        );
-        organizations.defineRole(
-                organizationId,
-                "council",
-                "Council",
-                0L,
-                EnumSet.of(
-                        OrganizationCapability.TREASURY_VIEW,
-                        OrganizationCapability.CONTRACT_CREATE,
-                        OrganizationCapability.CONTRACT_ACCEPT,
-                        OrganizationCapability.MEMBER_INVITE
-                )
-        );
+    private void defineDefaultRoles(UUID organizationId, GovernmentType governmentType) throws SQLException {
+        switch (governmentType) {
+            case COUNCIL -> organizations.defineRole(
+                    organizationId, "council", "Council Member", 0L,
+                    EnumSet.of(
+                            OrganizationCapability.TREASURY_VIEW,
+                            OrganizationCapability.CONTRACT_CREATE,
+                            OrganizationCapability.CONTRACT_ACCEPT,
+                            OrganizationCapability.MEMBER_INVITE
+                    ));
+            case MAYOR -> organizations.defineRole(
+                    organizationId, "mayor", "Mayor", 0L, EnumSet.allOf(OrganizationCapability.class));
+            case MONARCHY -> organizations.defineRole(
+                    organizationId, "crown", "Crown", 0L, EnumSet.allOf(OrganizationCapability.class));
+            case DIRECT_DEMOCRACY -> organizations.defineRole(
+                    organizationId, "steward", "Steward", 0L,
+                    EnumSet.of(
+                            OrganizationCapability.TREASURY_VIEW,
+                            OrganizationCapability.TREASURY_DEPOSIT,
+                            OrganizationCapability.CONTRACT_CREATE,
+                            OrganizationCapability.MEMBER_INVITE
+                    ));
+            case CUSTOM -> organizations.defineRole(
+                    organizationId, "official", "Official", 0L,
+                    EnumSet.of(OrganizationCapability.TREASURY_VIEW));
+        }
         organizations.defineRole(
                 organizationId,
                 "treasurer",
@@ -734,6 +774,7 @@ public final class CivicsService {
         return new GovernmentRecord(
                 UUID.fromString(rows.getString("territory_claim_uuid")),
                 UUID.fromString(rows.getString("organization_uuid")),
+                rows.getString("government_type"),
                 UUID.fromString(rows.getString("created_by")),
                 rows.getLong("created_at")
         );
