@@ -119,20 +119,34 @@ public final class GovernmentCommand implements CommandExecutor, TabCompleter {
         GovernmentContext government = context.get();
         OrganizationView organization = government.organization();
         String role = organization.memberRoles().get(player.getUniqueId());
-        GardenMessages.send(player, organization.name() + " | Territory: " + government.territory().name()
-                + " | Type: " + government.mapping().governmentType().toLowerCase(Locale.ROOT).replace('_', ' ') + ".");
-        GardenMessages.send(player, "Treasury: ⟡ " + organization.treasury()
-                + (role == null ? "" : " | Your role: " + role) + ".");
-        GardenMessages.send(player, "Officials: " + organization.memberRoles().size()
-                + " | Positions: " + organization.roles().size() + ".");
+        player.sendMessage(GardenMessages.prefix()
+                .append(net.kyori.adventure.text.Component.text(
+                        organization.name(), GardenMessages.PETAL_FROST)));
+        player.sendMessage(net.kyori.adventure.text.Component.text(
+                "Territory: " + government.territory().name()
+                        + " | Type: "
+                        + government.mapping().governmentType().toLowerCase(Locale.ROOT).replace('_', ' '),
+                GardenMessages.MESSAGE_COLOR));
+        player.sendMessage(net.kyori.adventure.text.Component.text(
+                "Treasury: ⟡ " + organization.treasury()
+                        + (role == null ? "" : " | Your role: " + role),
+                GardenMessages.NEUTRAL_GRAY));
+        player.sendMessage(net.kyori.adventure.text.Component.text(
+                "Officials: " + organization.memberRoles().size()
+                        + " | Positions: " + organization.roles().size(),
+                GardenMessages.NEUTRAL_GRAY));
     }
 
     private void roles(Player player) throws SQLException {
         GovernmentContext context = civics.requireActorGovernment(player);
-        GardenMessages.send(player, context.organization().name() + " positions:");
+        player.sendMessage(GardenMessages.prefix()
+                .append(net.kyori.adventure.text.Component.text(
+                        context.organization().name() + " positions", GardenMessages.PETAL_FROST)));
         for (OrganizationRoleView role : context.organization().roles().values()) {
-            GardenMessages.send(player, role.key() + " — " + role.displayName()
-                    + (role.salary() > 0 ? " | Salary ⟡ " + role.salary() : ""));
+            player.sendMessage(net.kyori.adventure.text.Component.text(
+                    role.key() + " — " + role.displayName()
+                            + (role.salary() > 0 ? " | Salary ⟡ " + role.salary() : ""),
+                    GardenMessages.MESSAGE_COLOR));
         }
     }
 

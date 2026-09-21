@@ -6,7 +6,6 @@ import com.herasgarden.gardencore.api.land.TerritorySummary;
 import com.herasgarden.gardencore.api.ui.GardenMessages;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
@@ -85,20 +84,29 @@ public final class CivicsCommand implements CommandExecutor, TabCompleter {
         }
 
         player.sendMessage(GardenMessages.prefix()
-                .append(Component.text("Pending citizenship applications", NamedTextColor.WHITE)));
+                .append(Component.text("Citizenship applications", GardenMessages.PETAL_FROST)));
+        player.sendMessage(Component.text(
+                "Review each application, then choose an action at the end of its row.",
+                GardenMessages.NEUTRAL_GRAY));
         for (CitizenshipApplication application : applications) {
             String applicant = playerName(application.playerId());
             String shortId = application.id().toString().substring(0, 8);
-            Component line = Component.text(shortId + " — " + applicant, NamedTextColor.WHITE);
+            Component line = Component.text(shortId + " — " + applicant, GardenMessages.MESSAGE_COLOR);
             if (!application.message().isBlank()) {
-                line = line.append(Component.text(" | " + application.message(), NamedTextColor.GRAY));
+                line = line.append(Component.text(" | " + application.message(), GardenMessages.NEUTRAL_GRAY));
             }
             line = line.append(Component.space())
-                    .append(Component.text("[Approve]", NamedTextColor.GREEN)
-                            .clickEvent(ClickEvent.runCommand("/civics approve " + application.id())))
+                    .append(GardenMessages.action(
+                            "[Approve]",
+                            "/civics approve " + application.id(),
+                            "Approve this citizenship application.",
+                            GardenMessages.MUTED_OLIVE))
                     .append(Component.space())
-                    .append(Component.text("[Reject]", NamedTextColor.RED)
-                            .clickEvent(ClickEvent.runCommand("/civics reject " + application.id())));
+                    .append(GardenMessages.action(
+                            "[Reject]",
+                            "/civics reject " + application.id(),
+                            "Reject this citizenship application.",
+                            GardenMessages.BUBBLEGUM_PINK));
             player.sendMessage(line);
         }
     }
