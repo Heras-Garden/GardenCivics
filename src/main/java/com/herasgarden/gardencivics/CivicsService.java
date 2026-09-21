@@ -351,11 +351,19 @@ public final class CivicsService implements TerritoryGovernmentRegistrar {
         }
 
         if (!platform.currency().deposit(actor.getUniqueId(), amount)) {
+            boolean restored = false;
+            String failure = "Treasury restoration returned false";
             try {
-                organizations.creditTreasury(context.organization().id(), amount);
+                restored = organizations.creditTreasury(context.organization().id(), amount);
             } catch (SQLException rollbackFailure) {
-                plugin.getLogger().severe("CRITICAL: could not restore government treasury after failed withdrawal: "
-                        + rollbackFailure.getMessage());
+                failure = rollbackFailure.getMessage();
+            }
+            if (!restored) {
+                recordTreasuryRecovery(context.organization().id(), actor.getUniqueId(), amount, failure);
+                plugin.getLogger().severe("CRITICAL: government treasury withdrawal of ⟡ " + amount
+                        + " for " + actor.getUniqueId() + " requires admin recovery.");
+                throw new IllegalArgumentException(
+                        "Your balance could not receive the withdrawal and treasury restoration needs administrator review.");
             }
             throw new IllegalArgumentException("Your balance could not receive the withdrawal. The treasury was restored.");
         }
@@ -364,6 +372,24 @@ public final class CivicsService implements TerritoryGovernmentRegistrar {
         journalTreasury(context.organization().id(), actor.getUniqueId(), "WITHDRAW", amount, balance);
         publishTreasury(context, actor.getUniqueId(), "WITHDRAW", amount, balance);
         return balance;
+    }
+
+    private void recordTreasuryRecovery(UUID organizationId, UUID playerId, long amount, String reason) {
+        try (Connection connection = platform.storage().connection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "INSERT INTO gcv_treasury_recovery "
+                             + "(recovery_uuid, organization_uuid, player_uuid, amount, reason, status, created_at) "
+                             + "VALUES (?, ?, ?, ?, ?, 'OPEN', ?)")) {
+            statement.setString(1, UUID.randomUUID().toString());
+            statement.setString(2, organizationId.toString());
+            statement.setString(3, playerId.toString());
+            statement.setLong(4, amount);
+            statement.setString(5, reason == null ? "Unknown compensation failure" : reason.substring(0, Math.min(192, reason.length())));
+            statement.setLong(6, System.currentTimeMillis());
+            statement.executeUpdate();
+        } catch (SQLException recoveryFailure) {
+            plugin.getLogger().severe("CRITICAL: could not record treasury recovery row: " + recoveryFailure.getMessage());
+        }
     }
 
     public CitizenshipApplication apply(Player player, String territoryName, String message) throws SQLException {
@@ -394,18 +420,39 @@ public final class CivicsService implements TerritoryGovernmentRegistrar {
                 now
         );
 
-        try (Connection connection = platform.storage().connection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "INSERT INTO gcv_citizenship_applications "
-                             + "(application_uuid, player_uuid, territory_claim_uuid, message, status, reviewed_by, "
-                             + "created_at, updated_at) VALUES (?, ?, ?, ?, 'PENDING', NULL, ?, ?)")) {
-            statement.setString(1, application.id().toString());
-            statement.setString(2, application.playerId().toString());
-            statement.setString(3, application.territoryClaimId().toString());
-            statement.setString(4, application.message());
-            statement.setLong(5, now);
-            statement.setLong(6, now);
-            statement.executeUpdate();
+        try (Connection connection = platform.storage().connection()) {
+            connection.setAutoCommit(false);
+            try {
+                try (PreparedStatement lock = connection.prepareStatement(
+                        "SELECT application_uuid FROM gcv_citizenship_applications "
+                                + "WHERE player_uuid = ? AND territory_claim_uuid = ? AND status = 'PENDING' FOR UPDATE")) {
+                    lock.setString(1, application.playerId().toString());
+                    lock.setString(2, application.territoryClaimId().toString());
+                    try (ResultSet existing = lock.executeQuery()) {
+                        if (existing.next()) {
+                            throw new IllegalArgumentException("You already have a pending application for that territory.");
+                        }
+                    }
+                }
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "INSERT INTO gcv_citizenship_applications "
+                                + "(application_uuid, player_uuid, territory_claim_uuid, message, status, reviewed_by, "
+                                + "created_at, updated_at) VALUES (?, ?, ?, ?, 'PENDING', NULL, ?, ?)")) {
+                    statement.setString(1, application.id().toString());
+                    statement.setString(2, application.playerId().toString());
+                    statement.setString(3, application.territoryClaimId().toString());
+                    statement.setString(4, application.message());
+                    statement.setLong(5, now);
+                    statement.setLong(6, now);
+                    statement.executeUpdate();
+                }
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(true);
+            }
         }
 
         publish(
@@ -449,21 +496,44 @@ public final class CivicsService implements TerritoryGovernmentRegistrar {
                 .orElseThrow(() -> new IllegalArgumentException("That territory no longer has a government."));
         requireReviewCapability(reviewer, context);
 
-        if (approve) {
-            citizenship.setCitizenship(application.playerId(), application.territoryClaimId());
-        }
-
         long now = System.currentTimeMillis();
         String status = approve ? "APPROVED" : "REJECTED";
         int changed;
+        if (approve) {
+            try (Connection connection = platform.storage().connection();
+                 PreparedStatement statement = connection.prepareStatement(
+                         "UPDATE gcv_citizenship_applications SET status = 'APPROVING', reviewed_by = ?, updated_at = ? "
+                                 + "WHERE application_uuid = ? AND status = 'PENDING'")) {
+                statement.setString(1, reviewer.getUniqueId().toString());
+                statement.setLong(2, now);
+                statement.setString(3, application.id().toString());
+                if (statement.executeUpdate() != 1) {
+                    throw new IllegalArgumentException("That citizenship application changed before it could be reviewed.");
+                }
+            }
+            try {
+                citizenship.setCitizenship(application.playerId(), application.territoryClaimId());
+            } catch (SQLException | RuntimeException exception) {
+                try (Connection connection = platform.storage().connection();
+                     PreparedStatement statement = connection.prepareStatement(
+                             "UPDATE gcv_citizenship_applications SET status = 'PENDING', reviewed_by = NULL, updated_at = ? "
+                                     + "WHERE application_uuid = ? AND status = 'APPROVING'")) {
+                    statement.setLong(1, System.currentTimeMillis());
+                    statement.setString(2, application.id().toString());
+                    statement.executeUpdate();
+                }
+                throw exception;
+            }
+        }
         try (Connection connection = platform.storage().connection();
              PreparedStatement statement = connection.prepareStatement(
                      "UPDATE gcv_citizenship_applications SET status = ?, reviewed_by = ?, updated_at = ? "
-                             + "WHERE application_uuid = ? AND status = 'PENDING'")) {
+                             + "WHERE application_uuid = ? AND status = ?")) {
             statement.setString(1, status);
             statement.setString(2, reviewer.getUniqueId().toString());
             statement.setLong(3, now);
             statement.setString(4, application.id().toString());
+            statement.setString(5, approve ? "APPROVING" : "PENDING");
             changed = statement.executeUpdate();
         }
         if (changed != 1) {
