@@ -79,7 +79,8 @@ public final class GovernmentCommand implements CommandExecutor, TabCompleter {
             return;
         }
         if (args.length < 3) {
-            GardenMessages.send(player, "Use /government create <council|mayor|monarchy|direct_democracy|custom> <territory>.");
+            GardenMessages.send(player, "New territories create their government automatically. Start with /claim start territory <council|mayor|monarchy|direct_democracy|custom>.");
+            GardenMessages.send(player, "/government create <type> <territory> is only for repairing an existing territory that is missing its government.");
             return;
         }
         GovernmentType type = GovernmentType.parse(args[1]);
@@ -87,7 +88,16 @@ public final class GovernmentCommand implements CommandExecutor, TabCompleter {
             GardenMessages.send(player, "Unknown government type.");
             return;
         }
-        GovernmentContext context = civics.createGovernment(player, join(args, 2), type);
+        String territoryName = join(args, 2);
+        boolean territoryExists = civics.territories().stream()
+                .anyMatch(territory -> territory.name().equalsIgnoreCase(territoryName));
+        if (!territoryExists) {
+            GardenMessages.send(player, "That territory does not exist yet. Use /claim start territory "
+                    + args[1].toLowerCase(Locale.ROOT)
+                    + " to found the territory and government together.");
+            return;
+        }
+        GovernmentContext context = civics.createGovernment(player, territoryName, type);
         GardenMessages.send(player, "Created " + context.organization().name()
                 + " for " + context.territory().name() + " as a " + type.displayName() + " government.");
     }
@@ -364,7 +374,9 @@ public final class GovernmentCommand implements CommandExecutor, TabCompleter {
 
     private void usage(Player player) {
         GardenMessages.send(player,
-                "/government create <type> <territory>, info [territory], roles, role <...>, "
+                "Found new governments with /claim start territory <type>. "
+                        + "/government create <type> <territory> repairs an existing territory without a government. "
+                        + "Other commands: info [territory], roles, role <...>, "
                         + "appoint <player> <role>, remove <player>, treasury, deposit <amount>, "
                         + "withdraw <amount>, payroll <preview|run>");
     }

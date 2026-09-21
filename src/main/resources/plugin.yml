@@ -11,7 +11,7 @@ commands:
   government:
     aliases: [gov]
     description: Manage your Garden territory government.
-    usage: /government <create|info|roles|role|appoint|remove|treasury|deposit|withdraw|payroll>
+    usage: /government <info|roles|role|appoint|remove|treasury|deposit|withdraw|payroll>  (new governments are created with /claim start territory <type>)
   civics:
     description: Apply for citizenship and review civic applications.
     usage: /civics <apply|applications|approve|reject>
