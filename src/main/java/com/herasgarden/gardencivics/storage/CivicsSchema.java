@@ -67,6 +67,17 @@ public final class CivicsSchema {
                     + "status VARCHAR(24) NOT NULL,"
                     + "updated_at BIGINT NOT NULL,"
                     + "PRIMARY KEY (run_uuid, player_uuid))");
+
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS gcv_treasury_recovery ("
+                    + "recovery_uuid VARCHAR(36) PRIMARY KEY,"
+                    + "organization_uuid VARCHAR(36) NOT NULL,"
+                    + "player_uuid VARCHAR(36) NOT NULL,"
+                    + "amount BIGINT NOT NULL,"
+                    + "reason VARCHAR(192) NOT NULL,"
+                    + "status VARCHAR(24) NOT NULL,"
+                    + "created_at BIGINT NOT NULL)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_gcv_treasury_recovery_open "
+                    + "ON gcv_treasury_recovery (status, created_at)");
         }
     }
 
