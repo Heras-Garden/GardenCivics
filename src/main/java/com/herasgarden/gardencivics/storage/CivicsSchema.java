@@ -13,6 +13,15 @@ public final class CivicsSchema {
 
     public static void ensure(GardenStorage storage) throws SQLException {
         try (Connection connection = storage.connection(); Statement statement = connection.createStatement()) {
+            // Adopt the existing citizenship table in place. The gl_ prefix is
+            // retained intentionally so upgrades preserve every existing row.
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS gl_citizenships ("
+                    + "player_uuid VARCHAR(36) PRIMARY KEY,"
+                    + "territory_claim_uuid VARCHAR(36) NOT NULL,"
+                    + "joined_at BIGINT NOT NULL)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_gl_citizenships_territory "
+                    + "ON gl_citizenships (territory_claim_uuid, joined_at)");
+
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS gcv_governments ("
                     + "territory_claim_uuid VARCHAR(36) PRIMARY KEY,"
                     + "organization_uuid VARCHAR(36) NOT NULL UNIQUE,"

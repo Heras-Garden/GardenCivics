@@ -6,7 +6,7 @@ import com.herasgarden.gardencore.api.GardenPlatform;
 import com.herasgarden.gardencore.api.civics.TerritoryGovernmentRegistrar;
 import com.herasgarden.gardencore.claim.GovernmentType;
 import com.herasgarden.gardencore.api.integration.IntegrationEventType;
-import com.herasgarden.gardencore.api.land.GardenCitizenshipDirectory;
+import com.herasgarden.gardencore.api.membership.TerritoryMembershipProvider;
 import com.herasgarden.gardencore.api.land.GardenTerritoryDirectory;
 import com.herasgarden.gardencore.api.land.TerritorySummary;
 import com.herasgarden.gardencore.api.organization.OrganizationCapability;
@@ -32,7 +32,7 @@ public final class CivicsService implements TerritoryGovernmentRegistrar {
     private final GardenPlatform platform;
     private final OrganizationDirectory organizations;
     private final GardenTerritoryDirectory territories;
-    private final GardenCitizenshipDirectory citizenship;
+    private final TerritoryMembershipProvider citizenship;
     private final int applicationMessageMax;
 
     public CivicsService(
@@ -40,7 +40,7 @@ public final class CivicsService implements TerritoryGovernmentRegistrar {
             GardenPlatform platform,
             OrganizationDirectory organizations,
             GardenTerritoryDirectory territories,
-            GardenCitizenshipDirectory citizenship,
+            TerritoryMembershipProvider citizenship,
             int applicationMessageMax
     ) {
         this.plugin = plugin;
@@ -119,7 +119,7 @@ public final class CivicsService implements TerritoryGovernmentRegistrar {
 
         if (citizenship.territoryClaimOf(founder.getUniqueId()).isEmpty()) {
             try {
-                citizenship.setCitizenship(founder.getUniqueId(), territoryClaimId);
+                citizenship.setMembership(founder.getUniqueId(), territoryClaimId);
             } catch (SQLException exception) {
                 plugin.getLogger().warning("Government created, but founder citizenship could not be set: "
                         + exception.getMessage());
@@ -512,7 +512,7 @@ public final class CivicsService implements TerritoryGovernmentRegistrar {
                 }
             }
             try {
-                citizenship.setCitizenship(application.playerId(), application.territoryClaimId());
+                citizenship.setMembership(application.playerId(), application.territoryClaimId());
             } catch (SQLException | RuntimeException exception) {
                 try (Connection connection = platform.storage().connection();
                      PreparedStatement statement = connection.prepareStatement(

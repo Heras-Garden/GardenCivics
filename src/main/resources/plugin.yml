@@ -8,6 +8,9 @@ description: Territory governments, civic treasury, officials, and citizenship a
 depend: [GardenCore, GardenLands]
 
 commands:
+  citizen:
+    description: Choose and view your Territory citizenship.
+    usage: /citizen <status|join|leave|list>
   government:
     aliases: [gov]
     description: Manage your Garden territory government.
@@ -17,6 +20,12 @@ commands:
     usage: /civics <apply|applications|approve|reject>
 
 permissions:
+  gardencivics.citizen:
+    description: Use Garden citizenship commands.
+    default: true
+  gardencivics.citizen.list:
+    description: List declared citizens of a Territory.
+    default: true
   gardencivics.admin:
     description: Bypass GardenCivics government permission checks.
     default: op
